@@ -8,6 +8,8 @@
   <body>
     <canvas width="512" height="512"></canvas>
     <script type="module">
+      const GRID_SIZE = 32;
+
       const canvas = document.querySelector("canvas");
 
       // Your WebGPU code will begin here!
@@ -69,16 +71,36 @@
       const cellShaderModule = device.createShaderModule({
         label: "Cell shader",
         code: `
-    // Your shader code will go here
+
+struct VertexInput {
+  @location(0) pos: vec2f,
+  @builtin(instance_index) instance: u32,
+};
+
+struct VertexOutput {
+  @builtin(position) pos: vec4f,
+  @location(0) cell: vec2f, // New line!
+};
+
+@group(0) @binding(0) var<uniform> grid: vec2f;
+
 @vertex
-fn vertexMain(@location(0) pos: vec2f) ->
-  @builtin(position) vec4f {
-  return vec4f(pos, 0, 1);
+fn vertexMain(input: VertexInput) -> VertexOutput {
+let i = f32(input.instance);
+let cell = vec2f(i % grid.x, floor(i / grid.x));
+let cellOffset = cell / grid * 2; // Compute the offset to cell
+let gridPos = (input.pos + 1) / grid - 1 + cellOffset; // Add it here!
+
+var output: VertexOutput;
+output.pos = vec4f(gridPos, 0, 1);
+output.cell = cell;
+return output;
 }
 
 @fragment
-fn fragmentMain() -> @location(0) vec4f {
-  return vec4f(1, 0, 0, 1); // (Red, Green, Blue, Alpha)
+fn fragmentMain(input: VertexOutput) -> @location(0) vec4f {
+  let c = input.cell / grid;
+  return vec4f(c, 1-c.x, 1);
 }
   `,
       });
@@ -102,6 +124,27 @@ fn fragmentMain() -> @location(0) vec4f {
         },
       });
 
+      // Create a uniform buffer that describes the grid.
+      const uniformArray = new Float32Array([GRID_SIZE, GRID_SIZE]);
+      const uniformBuffer = device.createBuffer({
+        label: "Grid Uniforms",
+        size: uniformArray.byteLength,
+        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+      });
+      device.queue.writeBuffer(uniformBuffer, 0, uniformArray);
+
+      const bindGroup = device.createBindGroup({
+        label: "Cell renderer bind group",
+        layout: cellPipeline.getBindGroupLayout(0),
+        entries: [
+          {
+            binding: 0,
+            resource: { buffer: uniformBuffer },
+          },
+        ],
+      });
+
+      //create command encoder
       const encoder = device.createCommandEncoder();
 
       const pass = encoder.beginRenderPass({
@@ -118,7 +161,8 @@ fn fragmentMain() -> @location(0) vec4f {
 
       pass.setPipeline(cellPipeline);
       pass.setVertexBuffer(0, vertexBuffer);
-      pass.draw(vertices.length / 2); // 6 vertices
+      pass.setBindGroup(0, bindGroup); // New line!
+      pass.draw(vertices.length / 2, GRID_SIZE * GRID_SIZE);
 
       pass.end();
 
