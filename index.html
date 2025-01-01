@@ -239,12 +239,6 @@ fn computeMain(@builtin(global_invocation_id) cell: vec3u) {
 
       device.queue.writeBuffer(cellStateStorage[0], 0, cellStateArray);
 
-      // Mark every other cell of the second grid as active.
-      for (let i = 0; i < cellStateArray.length; i++) {
-        cellStateArray[i] = i % 2;
-      }
-      device.queue.writeBuffer(cellStateStorage[1], 0, cellStateArray);
-
       const bindGroups = [
         device.createBindGroup({
           label: "Cell renderer bind group A",
